@@ -1,0 +1,5 @@
+anastruct
+matplotlib
+pydantic
+anthropic
+streamlit
