@@ -1,31 +1,66 @@
-from anastruct import SystemElements
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from anastruct import SystemElements
+from schemas import BeamAnalysisRequest, SupportSchema, PointLoadSchema
 
-def test_physics_engine():
-    # Initialize a 2D structural system
+def solve_beam(request: BeamAnalysisRequest, output_image_path: str = "test_output.png") -> dict:
+    """
+    Solves a 2D beam using a validated BeamAnalysisRequest object.
+    Returns analysis summary dictionary and saves the moment diagram.
+    """
     ss = SystemElements()
-    
-    # Define a 12-meter beam (two 6-meter elements connected at x=6)
-    ss.add_element(location=[[0, 0], [6, 0]])
-    ss.add_element(location=[[6, 0], [12, 0]])
-    
-    # Add supports: Hinge at left end (x=0), Roller at right end (x=12)
-    ss.add_support_hinged(node_id=1)
-    ss.add_support_roll(node_id=3, direction=2)
-    
-    # Apply a 40 kN downward point load at center node (x=6)
-    ss.point_load(node_id=2, Fy=-40.0)
-    
-    # Calculate global stiffness matrix and solve
+    element_length = request.length / request.num_elements
+
+    # Build beam topology
+    for i in range(request.num_elements):
+        ss.add_element(location=[[i * element_length, 0], [(i + 1) * element_length, 0]])
+
+    # Apply supports
+    for sup in request.supports:
+        if sup.type == "hinge":
+            ss.add_support_hinged(node_id=sup.node_id)
+        elif sup.type == "roller":
+            ss.add_support_roll(node_id=sup.node_id)
+        elif sup.type == "fixed":
+            ss.add_support_fixed(node_id=sup.node_id)
+
+    # Apply point loads
+    for load in request.point_loads:
+        ss.point_load(node_id=load.node_id, Fy=load.Fy, Fx=load.Fx)
+
+    # Calculate FEA forces
     ss.solve()
-    
-    print("✅ Anastruct FEA solver executed successfully!")
-    
-    # Save visualization to image
-    ss.show_structure(show=False)
-    plt.title("Physica Day 1 Test - 12m Beam with 40kN Load")
-    plt.savefig("test_output.png")
-    print("✅ Diagram rendered and saved as 'test_output.png'")
+
+    # Render bending moment diagram
+    fig = ss.show_bending_moment(show=False)
+    plt.title(f"Bending Moment Diagram ({request.length}m Beam)")
+    plt.savefig(output_image_path, bbox_inches='tight')
+    plt.close('all')
+
+    return {
+        "status": "success",
+        "length": request.length,
+        "elements": request.num_elements,
+        "diagram_path": output_image_path
+    }
 
 if __name__ == "__main__":
-    test_physics_engine()
+    print("Testing solver.py integration with Pydantic...")
+
+    # Build validated request
+    req = BeamAnalysisRequest(
+        length=10.0,
+        num_elements=2,
+        supports=[
+            SupportSchema(node_id=1, type="hinge"),
+            SupportSchema(node_id=3, type="roller")
+        ],
+        point_loads=[
+            PointLoadSchema(node_id=2, Fy=-50.0, Fx=0.0)
+        ]
+    )
+
+    result = solve_beam(req)
+    print("✅ Solver successfully integrated with Pydantic schema!")
+    print(f"Result summary: {result}")
